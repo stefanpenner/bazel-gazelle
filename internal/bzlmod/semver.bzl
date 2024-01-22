@@ -78,3 +78,28 @@ def _semver_to_comparable(v, *, relaxed = False):
 semver = struct(
     to_comparable = _semver_to_comparable,
 )
+
+def humanize_comparable_version(version):
+    """
+    Returns a human-readable representation of a comparable version object.
+
+    This is useful for providing more helpful error messages.
+
+    Please note, this is lossy as + meta segments are replaced with sentinal value to preserve expected sorting
+
+    Args:
+        version: The comparable version object.
+
+    Returns:
+        A human-readable representation of the version.
+    """
+    core = [_flatten_segment(segment) for segment in version[0]]
+    meta = [_flatten_segment(segment) for segment in version[1] if segment[0] != "{"]
+    result = ".".join(core)
+
+    if (len(meta) > 0):
+        result += "-" + ".".join(meta)
+    return result
+
+def _flatten_segment(segment):
+    return "".join([str(atom) for atom in segment])
