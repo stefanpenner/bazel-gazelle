@@ -295,6 +295,7 @@ def _go_repository_impl(ctx):
             repo_config = ctx.path(Label("@@" + extension_repo_prefix + "bazel_gazelle_go_repository_config//:WORKSPACE"))
         else:
             repo_config = ctx.path(ctx.attr.build_config)
+
         cmd = [
             gazelle_path,
             "-go_repository_mode",
@@ -330,6 +331,24 @@ def _go_repository_impl(ctx):
                 ctx.attr.importpath,
                 result.stderr,
             ))
+
+        print("PATH", ctx.path(""))
+        print("NAME:", ctx.attr.name)
+        # result = env_execute(ctx, ["sleep", "100000"], environment = env, timeout = _GO_REPOSITORY_TIMEOUT)
+
+        # echo "package_group(name = 'package_group_name', packages = ["//..."])" >> BUILD.bazel
+        # result = env_execute(ctx, [
+        #     "/Users/spenner/go/bin/buildozer",
+        #     "set visibility :__subpackages__ @nimbus-playground//compute-broker-playground:__subpackages__",
+        #     "//...:all"
+        # ], environment = env, timeout = _GO_REPOSITORY_TIMEOUT)
+        #
+        if result.return_code:
+            fail("failed to generate buildozer files for %s: error: %s" % (
+                ctx.attr.importpath,
+                result.stderr,
+            ))
+
         if ctx.attr.debug_mode and result.stderr:
             print("%s gazelle.stdout: %s" % (ctx.name, result.stdout))
             print("%s gazelle.stderr: %s" % (ctx.name, result.stderr))

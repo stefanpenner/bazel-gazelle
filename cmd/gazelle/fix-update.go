@@ -322,6 +322,11 @@ func runFixUpdate(wd string, cmd command, args []string) (err error) {
 
 	var errorsFromWalk []error
 	walk.Walk(c, cexts, uc.dirs, uc.walkMode, func(dir, rel string, c *config.Config, update bool, f *rule.File, subdirs, regularFiles, genFiles []string) {
+		if f != nil {
+			fmt.Printf("visited: %v\n", f.Path)
+		} else {
+			fmt.Printf("f is nil\n")
+		}
 		// If this file is ignored or if Gazelle was not asked to update this
 		// directory, just index the build file and move on.
 		if !update {
@@ -342,11 +347,12 @@ func runFixUpdate(wd string, cmd command, args []string) (err error) {
 				l.Fix(c, f)
 			}
 		}
-
 		// Generate rules.
 		var empty, gen []*rule.Rule
 		var imports []interface{}
 		for _, l := range filterLanguages(c, languages) {
+			fmt.Printf("generating rules for language: %v\n", l.Name())
+			fmt.Printf(" files: %v\n", regularFiles)
 			res := l.GenerateRules(language.GenerateArgs{
 				Config:       c,
 				Dir:          dir,
@@ -362,8 +368,20 @@ func runFixUpdate(wd string, cmd command, args []string) (err error) {
 				log.Panicf("%s: language %s generated %d rules but returned %d imports", rel, l.Name(), len(res.Gen), len(res.Imports))
 			}
 			empty = append(empty, res.Empty...)
+			// fmt.Printf(" empty: %v\n", empty)
 			gen = append(gen, res.Gen...)
+			// fmt.Printf(" gen: %v\n", gen)
 			imports = append(imports, res.Imports...)
+
+			for _, file := range regularFiles {
+				if file == "go.mod" {
+					log.Fatalf("go.mod found in regularFiles: %v\n", regularFiles)
+				}
+			}
+
+			// for _, m := range imports {
+			// 	fmt.Printf(" imports: %v\n", m)
+			// }
 		}
 		if f == nil && len(gen) == 0 {
 			return
@@ -412,6 +430,8 @@ func runFixUpdate(wd string, cmd command, args []string) (err error) {
 			merger.MergeFile(f, empty, gen, merger.PreResolve,
 				unionKindInfoMaps(kinds, mappedKindInfo))
 		}
+		fmt.Printf(" VisitRecord:\n- pkgRel %v\n- gen: %v\n- imports: %v\n- mappedKinds: %v\n- mappedKindInfo: %v\n ", rel, gen, imports, mappedKinds, mappedKindInfo)
+		fmt.Printf("  - c: %v\n", c.Repos)
 		visits = append(visits, visitRecord{
 			pkgRel:         rel,
 			c:              c,
@@ -426,6 +446,7 @@ func runFixUpdate(wd string, cmd command, args []string) (err error) {
 		// Add library rules to the dependency resolution table.
 		if c.IndexLibraries {
 			for _, r := range f.Rules {
+				fmt.Printf("adding rule to ruleIndex: %v\n", r.Name())
 				ruleIndex.AddRule(c, r, f)
 			}
 		}
@@ -467,6 +488,7 @@ func runFixUpdate(wd string, cmd command, args []string) (err error) {
 		for i, r := range v.rules {
 			from := label.New(c.RepoName, v.pkgRel, r.Name())
 			if rslv := mrslv.Resolver(r, v.pkgRel); rslv != nil {
+				// NOTE(stef) here we go and start resolving dependencies
 				rslv.Resolve(v.c, ruleIndex, rc, r, v.imports[i], from)
 			}
 		}

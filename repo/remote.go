@@ -450,6 +450,7 @@ func (r *RemoteCache) Mod(importPath string) (modPath, name string, err error) {
 		}
 	}
 
+	fmt.Printf("I AM HERE: importPath: %s\n", importPath)
 	// Ask "go list".
 	v, err := r.mod.ensure(importPath, func() (interface{}, error) {
 		modPath, err := r.ModInfo(importPath)

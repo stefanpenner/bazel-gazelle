@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 
+	mod "golang.org/x/mod/modfile"
+
 	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/language/proto"
@@ -104,6 +106,25 @@ func (gl *goLang) GenerateRules(args language.GenerateArgs) language.GenerateRes
 			otherFiles = append(otherFiles, f)
 		}
 	}
+
+	var requiredModules = make(map[string]bool)
+	for _, f := range regularFiles {
+		if f == "go.mod" {
+			file, err := mod.Parse(filepath.Join(args.Dir, f))
+			if err != nil {
+				log.Fatalf("error parsing go.mod file: %v", err)
+				continue
+			}
+
+			for _, required := range file.Require {
+				requiredModules[required.Mod.Path] = true
+			}
+			// parse go.mod file, grab required modules to do later visibility check
+			continue
+		}
+	}
+
+	fmt.Printf("required modules: %v\n", requiredModules)
 
 	// Look for a subdirectory named testdata. Only treat it as data if it does
 	// not contain a buildable package.

@@ -77,6 +77,7 @@ func (gl *goLang) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.Remo
 		resolve = ResolveGo
 	}
 	deps, errs := imports.Map(func(imp string) (string, error) {
+		fmt.Printf("resolve.go: resolve: imp: %s\n", imp)
 		l, err := resolve(c, ix, rc, imp, from)
 		if err == errSkipImport {
 			return "", nil
@@ -119,6 +120,9 @@ var (
 // (gomock). Gazelle calls Language.Resolve instead.
 func ResolveGo(c *config.Config, ix *resolve.RuleIndex, rc *repo.RemoteCache, imp string, from label.Label) (label.Label, error) {
 	gc := getGoConfig(c)
+
+	// fmt.Printf("prefixRel: %v\n", gc.prefixRel) // this helps us understand which sub go module we are
+	// fmt.Printf("go config: %v\n", c)
 	if build.IsLocalImport(imp) {
 		cleanRel := path.Clean(path.Join(from.Pkg, imp))
 		if build.IsLocalImport(cleanRel) {
@@ -140,6 +144,8 @@ func ResolveGo(c *config.Config, ix *resolve.RuleIndex, rc *repo.RemoteCache, im
 	} else if err != errNotFound {
 		return label.NoLabel, err
 	}
+	// fmt.Printf("  NOT FOUND imp: %v, from: %v \n", imp, from)
+	// fmt.Printf("c.bzlmod %v\n", c.Bzlmod)
 
 	// Special cases for rules_go and bazel_gazelle.
 	// These have names that don't following conventions and they're
@@ -155,6 +161,7 @@ func ResolveGo(c *config.Config, ix *resolve.RuleIndex, rc *repo.RemoteCache, im
 		}
 	}
 
+	// fmt.Printf(" c.IndexLibraries: %v\n", c.IndexLibraries)
 	if !c.IndexLibraries {
 		// packages in current repo were not indexed, relying on prefix to decide what may have been in
 		// current repo
@@ -165,17 +172,25 @@ func ResolveGo(c *config.Config, ix *resolve.RuleIndex, rc *repo.RemoteCache, im
 		}
 	}
 
+	// fmt.Printf(" gc.depMode = %v, c.depMode : %v\n", gc.depMode, vendorMode)
 	if gc.depMode == vendorMode {
 		return resolveVendored(gc, imp)
 	}
 	var resolveFn func(string) (string, string, error)
+	// var name string
 	if gc.depMode == staticMode {
 		resolveFn = rc.RootStatic
+		// name = "root static"
 	} else if gc.moduleMode || pathWithoutSemver(imp) != "" {
+		// this is the algo that finds the external stuff, but it looks it up on something that is repo wide, not scoped to the module
 		resolveFn = rc.Mod
+		// name = "mod"
 	} else {
 		resolveFn = rc.Root
+		// name = "root"
 	}
+	// fmt.Printf("  resolveToExternalLabel: imp: %v resolveFN: %v\n", imp, name)
+	// fmt.Printf(" gc: %v\n", gc)
 	return resolveToExternalLabel(c, resolveFn, imp)
 }
 
@@ -186,6 +201,10 @@ func IsStandard(imp string) bool {
 
 func resolveWithIndexGo(c *config.Config, ix *resolve.RuleIndex, imp string, from label.Label) (label.Label, error) {
 	matches := ix.FindRulesByImportWithConfig(c, resolve.ImportSpec{Lang: "go", Imp: imp}, "go")
+	// prefixRel := getGoConfig(c).prefixRel
+	// fmt.Printf("importing: %v From: %v\n", imp, prefixRel)
+	// fmt.Printf("  matches: %v\n", matches)
+	//
 	var bestMatch resolve.FindResult
 	var bestMatchIsVendored bool
 	var bestMatchVendorRoot string
@@ -245,19 +264,36 @@ func resolveWithIndexGo(c *config.Config, ix *resolve.RuleIndex, imp string, fro
 		}
 	}
 	if matchError != nil {
+		// fmt.Printf("  MATCH ERROR for imp %v, from %v, error %v\n", imp, prefixRel, matchError)
 		return label.NoLabel, matchError
 	}
 	if bestMatch.Label.Equal(label.NoLabel) {
+		// fmt.Printf("  NO LABEL for imp %v, from %v, error %v\n", imp, prefixRel)
 		return label.NoLabel, errNotFound
 	}
 	if bestMatch.IsSelfImport(from) {
+		// fmt.Printf("  self import for imp %v, from %v, error %v\n", imp, prefixRel)
 		return label.NoLabel, errSkipImport
 	}
+
+	// fmt.Printf("importing: %v From: %v\n", imp, prefixRel)
+	// fmt.Printf("matches: %v\n", matches)
+	// fmt.Printf("bestMatch: %v\n", bestMatch)
 	return bestMatch.Label, nil
 }
 
 func resolveToExternalLabel(c *config.Config, resolveFn func(string) (string, string, error), imp string) (label.Label, error) {
 	prefix, repo, err := resolveFn(imp)
+
+	prefixRel := getGoConfig(c).prefixRel
+	fmt.Printf(" resolved: prefix %s, repo %s, from: %s, err %v\n", prefix, repo, prefixRel, err)
+
+	// TODO(stef): This may be a great place to do some visibility checking.
+	// if c is made to represent the current config at the current CWD, it should also contain the list of go modules from the current go.mod file
+	// We can compare what we resolved, to that SET of modules, allowing us to determine what is visible and what is not.
+	//
+	// From that point we can act... Most likely returning a user actionable error.
+
 	if err != nil {
 		return label.NoLabel, err
 	} else if prefix == "" && repo == "" {
