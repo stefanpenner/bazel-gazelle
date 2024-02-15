@@ -41,6 +41,7 @@ tasks:
     # Regenerate the BUILD file for the test module using Gazelle.
     # Also verify -repo_config are generated correctly in gazelle.bash
     - rm pkg/BUILD.bazel
+    - touch pkg/BUILD.bazel # ensure empty pkg/BUILD.bazel exists
     - bazel run //:gazelle -- update pkg
     - bazel run //:gazelle -- pkg
     build_targets:

@@ -1,5 +1,5 @@
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("//internal/bzlmod:semver.bzl", "semver")
+load("//internal/bzlmod:semver.bzl", "humanize_comparable_version", "semver")
 
 _SORTED_TEST_VERSIONS = [
     "0.1-a",
@@ -77,8 +77,23 @@ def _semver_test_impl(ctx):
 
 semver_test = unittest.make(_semver_test_impl)
 
+def _humanize_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # remove everything after and including the frist + as it is not preserved in a comparable
+    RESTORABLE_VERSIONS = [version.split("+")[0] for version in _SORTED_TEST_VERSIONS]
+
+    for version in RESTORABLE_VERSIONS:
+        humanized = humanize_comparable_version(semver.to_comparable(version, relaxed = RESTORABLE_VERSIONS))
+        asserts.equals(env, "v" + version, humanized)
+
+    return unittest.end(env)
+
+humanize_test = unittest.make(_humanize_test_impl)
+
 def semver_test_suite(name):
     unittest.suite(
         name,
         semver_test,
+        humanize_test,
     )
