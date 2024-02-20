@@ -13,14 +13,14 @@
 # limitations under the License.
 
 load("//internal:go_repository.bzl", "go_repository")
-load(":go_mod.bzl", "deps_from_go_mod", "sums_from_go_mod")
+load(":go_mod.bzl", "deps_from_go_mod", "parse_go_work", "sums_from_go_mod", "sums_from_go_work")
 load(
     ":default_gazelle_overrides.bzl",
     "DEFAULT_BUILD_EXTRA_ARGS_BY_PATH",
     "DEFAULT_BUILD_FILE_GENERATION_BY_PATH",
     "DEFAULT_DIRECTIVES_BY_PATH",
 )
-load(":semver.bzl", "semver")
+load(":semver.bzl", "humanize_comparable_version", "semver")
 load(
     ":utils.bzl",
     "drop_nones",
@@ -43,6 +43,12 @@ https://github.com/bazelbuild/bazel-gazelle/issues/new or submit a PR adding \
 the required directives to the "default_gazelle_overrides.bzl" file at \
 https://github.com/bazelbuild/bazel-gazelle/tree/master/internal/bzlmod/default_gazelle_overrides.bzl.
 """
+
+def go_work_from_label(module_ctx, go_work_label):
+    """Loads deps from a go.work file"""
+    go_work_path = module_ctx.path(go_work_label)
+    go_work_content = module_ctx.read(go_work_path)
+    return parse_go_work(go_work_content, go_work_label)
 
 def _fail_on_non_root_overrides(module_ctx, module, tag_class):
     if module.is_root:
@@ -68,7 +74,8 @@ def _fail_on_unmatched_overrides(override_keys, resolutions, override_name):
     unmatched_overrides = [path for path in override_keys if path not in resolutions]
     if unmatched_overrides:
         fail("Some {} did not target a Go module with a matching path: {}".format(
-            override_name, ", ".join(unmatched_overrides)
+            override_name,
+            ", ".join(unmatched_overrides),
         ))
 
 def _check_directive(directive):
@@ -194,6 +201,78 @@ _go_repository_config = repository_rule(
     },
 )
 
+def fail_on_version_conflict(version, previous, module_tag, module_name_to_go_dot_mod_label, go_works, fail_or_warn):
+    """
+    Check if duplicate modules have different versions, and fail with a useful error message if they do.
+
+    Args:
+        version: The version of the module.
+        previous: The previous module object.
+        module_tag: The module tag.
+        module_name_to_go_dot_mod_label: A dictionary mapping module paths to go.mod labels.
+        go_works: A list of go_work objects representing use statements in the go.work file.
+        previous: The previous module object.
+    """
+
+    if not previous:
+        # no previous module, so no possible error
+        return
+
+    if not previous or version == previous.version:
+        # version is the same, skip because we won't error
+        return
+
+    # When using go.work, duplicate dependency versions are possible.
+    # This can cause issues, so we fail with a hopefully actionable error.
+    current_label = module_tag.parent_label
+
+    previous_label = previous.module_tag.parent_label
+
+    corrective_measure = None
+    default_corrective_mesasure = "To correct this:\n 1. manually update: all go.mod files to ensure the versions of '{}' are the same.\n 2. in the folder where you made changes to run: go mod tidy\n 3. run: go work sync.".format(module_tag.path)
+
+    if previous.version[0] == version[0] or str(current_label).endswith("go.work") or str(previous_label).endswith("go.work"):
+        corrective_measure = default_corrective_mesasure
+    else:
+        label = module_name_to_go_dot_mod_label.get(module_tag.path)
+
+        print(dir(previous.module_tag))
+        if label:
+            # if the label is present that means the module_tag is of a go.mod file, which means the correct action may be different.
+
+            # if the duplicate module in question is provided by go.work use statement then only manual intervention can fix it
+            # from_file_tags on go_work represents use statements in the go.work file
+            for from_file_tags in [go_work.from_file_tags for go_work in go_works]:
+                for from_file_tag in from_file_tags:
+                    if from_file_tag.go_mod == label:
+                        corrective_measure = default_corrective_mesasure
+                        break
+        elif previous.module_tag.indirect or module_tag.indirect:
+            # if the dependency indirect, the user will need to manually update go.mod, run go mod tidy in that directory and then run go work sync
+            corrective_measure = default_corrective_mesasure
+        else:
+            # TODO: if the version are v0.8.0 and v0.17.0 go work sync wont work
+            # ensure the corrective measure describes this. Maybe this is limited to indirect dependencies
+            corrective_measure = "To correct this, run:\n 1. go work sync."
+
+    message = "Multiple versions of {} found:\n - {} contains: {}\n - {} contains {}.\n{}".format(module_tag.path, current_label, humanize_comparable_version(version), previous_label, humanize_comparable_version(previous.version), corrective_measure)
+
+    if fail_or_warn:
+        fail(message)
+    else:
+        print(message)
+
+def _fail_if_not_root(module, from_file_tag):
+    if module.is_root != True:
+        fail("go_deps.from_file(go_work = '{}') tag can only be used from a root module but: '{}' is not a root module.".format(from_file_tag.go_work, module.name))
+
+def _fail_if_invalid_from_file_usage(from_file_tag):
+    if (
+        (from_file_tag.go_work == None and from_file_tag.go_mod == None) and
+        (from_file_tag.go_work != None and from_file_tag.go_mod != None)
+    ):
+        fail("go_deps.from_file tag must have either go_work or go_mod attribute, but not both.")
+
 def _noop(_):
     pass
 
@@ -251,9 +330,40 @@ def _go_deps_impl(module_ctx):
                     ", ".join([str(tag.go_mod) for tag in module.tags.from_file]),
                 ),
             )
+
         additional_module_tags = []
+        from_file_tags = []
+        go_works = []
+        module_name_to_go_dot_mod_label = {}
+
         for from_file_tag in module.tags.from_file:
-            module_path, module_tags_from_go_mod, go_mod_replace_map = deps_from_go_mod(module_ctx, from_file_tag.go_mod)
+            _fail_if_invalid_from_file_usage(from_file_tag)
+
+            if from_file_tag.go_mod:
+                from_file_tags.append(from_file_tag)
+            elif from_file_tag.go_work:
+                _fail_if_not_root(module, from_file_tag)
+
+                go_work = go_work_from_label(module_ctx, from_file_tag.go_work)
+                go_works.append(go_work)
+
+                # this ensures go.work replacements as considered
+                additional_module_tags += [
+                    with_replaced_or_new_fields(tag, _is_dev_dependency = False)
+                    for tag in go_work.module_tags
+                ]
+
+                for entry, new_sum in sums_from_go_work(module_ctx, from_file_tag.go_work).items():
+                    _safe_insert_sum(sums, entry, new_sum)
+
+                replace_map.update(go_work.replace_map)
+                from_file_tags = from_file_tags + go_work.from_file_tags
+            else:
+                fail("Either \"go_mod\" or \"go_work\" must be specified in \"go_deps.from_file\" tags.")
+
+        for from_file_tag in from_file_tags:
+            module_path, module_tags_from_go_mod, go_mod_replace_map, module_name = deps_from_go_mod(module_ctx, from_file_tag.go_mod)
+            module_name_to_go_dot_mod_label[module_name] = from_file_tag.go_mod
             is_dev_dependency = _is_dev_dependency(module_ctx, from_file_tag)
             additional_module_tags += [
                 with_replaced_or_new_fields(tag, _is_dev_dependency = is_dev_dependency)
@@ -304,12 +414,12 @@ def _go_deps_impl(module_ctx):
         # transitive dependencies have also been declared - we may end up
         # resolving them to higher versions, but only compatible ones.
         paths = {}
+
         for module_tag in module.tags.module + additional_module_tags:
-            if module_tag.path in paths:
-                fail("Duplicate Go module path \"{}\" in module \"{}\".".format(module_tag.path, module.name))
+            if not module_tag.path in paths:
+                paths[module_tag.path] = None
             if module_tag.path in bazel_deps:
                 continue
-            paths[module_tag.path] = None
             raw_version = _canonicalize_raw_version(module_tag.version)
 
             # For modules imported from a go.sum, we know which ones are direct
@@ -325,6 +435,14 @@ def _go_deps_impl(module_ctx):
                     root_module_direct_deps[_repo_name(module_tag.path)] = None
 
             version = semver.to_comparable(raw_version)
+            previous = paths.get(module_tag.path)
+
+            fail_or_warn = len([x for x in module.tags.from_file if x.fail_on_version_conflict == True]) > 0
+
+            # rather then failing, we could do MVS here, or some other heuristic
+            fail_on_version_conflict(version, previous, module_tag, module_name_to_go_dot_mod_label, go_works, fail_or_warn)
+            paths[module_tag.path] = struct(version = version, module_tag = module_tag)
+
             if module_tag.path not in module_resolutions or version > module_resolutions[module_tag.path].version:
                 module_resolutions[module_tag.path] = struct(
                     repo_name = _repo_name(module_tag.path),
@@ -341,7 +459,6 @@ def _go_deps_impl(module_ctx):
     # in the module resolutions and swapping out the entry.
     for path, replace in replace_map.items():
         if path in module_resolutions:
-
             # If the replace directive specified a version then we only
             # apply it if the versions match.
             if replace.from_version:
@@ -476,13 +593,14 @@ def _get_sum_from_module(path, module, sums):
         entry = (module.replace, module.raw_version)
 
     if entry not in sums:
+        # TODO: if no sum exist, this is probably because a go mod tidy was missed
         fail("No sum for {}@{} found".format(path, module.raw_version))
 
     return sums[entry]
 
 def _safe_insert_sum(sums, entry, new_sum):
     if entry in sums and new_sum != sums[entry]:
-        fail("Multiple mismatching sums for {}@{} found.".format(entry[0], entry[1]))
+        fail("Multiple mismatching sums for {}@{} found. {} vs {}".format(entry[0], entry[1], new_sum, sums[entry]))
     sums[entry] = new_sum
 
 def _canonicalize_raw_version(raw_version):
@@ -500,7 +618,9 @@ _config_tag = tag_class(
 
 _from_file_tag = tag_class(
     attrs = {
-        "go_mod": attr.label(mandatory = True),
+        "go_mod": attr.label(mandatory = False),
+        "go_work": attr.label(mandatory = False),
+        "fail_on_version_conflict": attr.bool(default = True),
     },
 )
 
@@ -515,6 +635,10 @@ _module_tag = tag_class(
         ),
         "build_naming_convention": attr.string(doc = """Removed, do not use""", default = ""),
         "build_file_proto_mode": attr.string(doc = """Removed, do not use""", default = ""),
+        "parent_label": attr.label(
+            doc = """The label of the go.mod or go.work file that this module was imported from.""",
+            default = Label("//:MODULE.bazel"),
+        ),
     },
 )
 
