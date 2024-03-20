@@ -107,3 +107,14 @@ func TestGetRepoRoot_error(t *testing.T) {
 		}
 	}
 }
+
+func TestModuleFromPath(t *testing.T) {
+	// Replace copyTree to avoid copying files.
+	// copyTree = func(_, _ string) error { return nil }
+	// Replace execCommand to avoid running go mod download.
+	// execCommand = func(_ string, _ ...string) error { return nil }
+
+	if err := moduleFromPath("from", "dest"); err != nil {
+		t.Errorf("moduleFromPath: %v", err)
+	}
+}

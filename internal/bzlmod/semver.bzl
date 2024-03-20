@@ -34,6 +34,8 @@ def _identifier_to_comparable(ident, *, numeric_only):
         # 11.4.3:
         # "Numeric identifiers always have lower precedence than non-numeric identifiers."
         return (_COMPARES_LOWEST_SENTINEL, int(ident))
+    elif ident == _COMPARES_HIGHEST_SENTINEL:
+        return (ident,)
     elif numeric_only:
         fail("Expected a numeric identifier, got: " + ident)
     else:
@@ -67,7 +69,7 @@ def _semver_to_comparable(v, *, relaxed = False):
         prerelease = [(_COMPARES_HIGHEST_SENTINEL,)]
 
     release = release_str.split(".")
-    if not relaxed and len(release) != 3:
+    if not v == "{" and not relaxed and len(release) != 3:
         fail("Semantic version strings must have exactly three dot-separated components, got: " + v)
 
     return (

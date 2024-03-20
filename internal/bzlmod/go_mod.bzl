@@ -28,6 +28,9 @@ def use_spec_to_label(workspace_name, use_directive):
     if use_directive.find("..") >= 0:
         fail("go.work use directive: '{}' contains '..' which is not currently supported.".format(use_directive))
 
+    if use_directive.startswith("/"):
+        fail("go.work use directive: '{}' is an absolute path, which is not currently supported.".format(use_directive))
+
     if use_directive.startswith("./"):
         use_directive = use_directive[2:]
 
@@ -94,7 +97,7 @@ def parse_go_work(content, go_work_label):
     go_mods = [use_spec_to_label(go_work_label.workspace_name, use) for use in state["use"]]
     from_file_tags = [struct(go_mod = go_mod, _is_dev_dependency = False) for go_mod in go_mods]
 
-    module_tags = [struct(version = mod.version, path = mod.to_path, _parent_label = go_work_label, indirect = False) for mod in state["replace"].values()]
+    module_tags = [struct(version = mod.version, path = mod.to_path, _parent_label = go_work_label, _module_path = mod.module_path, indirect = False) for mod in state["replace"].values()]
 
     return struct(
         go = (int(major), int(minor)),
@@ -133,6 +136,7 @@ def deps_from_go_mod(module_ctx, go_mod_label):
             path = require.path,
             version = require.version,
             indirect = require.indirect,
+            _module_path = None,
             _parent_label = go_mod_label,
         ))
 
@@ -228,11 +232,6 @@ def _parse_directive(state, directive, tokens, comment, path, line_no):
     # TODO: Handle exclude.
 
 def _parse_replace_directive(state, tokens, path, line_no):
-    # A replace directive might use a local file path beginning with ./ or ../
-    # These are not supported with gazelle~go_deps.
-    if (len(tokens) == 3 and tokens[2][0] == ".") or (len(tokens) > 3 and tokens[3][0] == "."):
-        fail("{}:{}: local file path not supported in replace directive: '{}'".format(path, line_no, tokens[2]))
-
     # replacements key off of the from_path
     from_path = tokens[0]
 
@@ -241,6 +240,7 @@ def _parse_replace_directive(state, tokens, path, line_no):
         state["replace"][from_path] = struct(
             from_version = None,
             to_path = tokens[2],
+            module_path = None,
             version = _canonicalize_raw_version(tokens[3]),
         )
         # pattern: replace from_path from_version => to_path to_version
@@ -250,13 +250,14 @@ def _parse_replace_directive(state, tokens, path, line_no):
             from_version = _canonicalize_raw_version(tokens[1]),
             to_path = tokens[3],
             version = _canonicalize_raw_version(tokens[4]),
+            module_path = None,
         )
     else:
-        fail(
-            "{}:{}: replace directive must follow pattern: ".format(path, line_no) +
-            "'replace from_path from_version => to_path to_version' or " +
-            "'replace from_path => to_path to_version'",
-            "but got: '{} {} {}'".format(*tokens),
+        state["replace"][from_path] = struct(
+            from_version = None,
+            to_path = tokens[0],
+            module_path = tokens[2],
+            version = "{",
         )
 
 def _tokenize_line(line, path, line_no):

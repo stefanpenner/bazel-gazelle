@@ -188,6 +188,8 @@ def _go_repository_impl(ctx):
             "-version=" + ctx.attr.version,
             "-sum=" + ctx.attr.sum,
         ]
+    elif ctx.attr.path:
+        pass
     else:
         fail("one of urls, commit, tag, or version must be specified")
 
@@ -244,6 +246,46 @@ def _go_repository_impl(ctx):
 
     env.update({k: ctx.os.environ[k] for k in env_keys if k in ctx.os.environ})
 
+    if ctx.attr.path:
+        print("OMG, path: %s", ctx.attr.path)
+        local_path_env = dict(env)
+        local_path_env["GOSUMDB"] = "off"
+
+        # Override external GO111MODULE, because it is needed by module mode, no-op in repository mode
+        local_path_env["GO111MODULE"] = "on"
+
+        if hasattr(ctx, "watch_tree"):
+            # https://github.com/bazelbuild/bazel/commit/fffa0affebbacf1961a97ef7cd248be64487d480
+            ctx.watch_tree(ctx.attr.path)
+        else:
+            print("""
+  WARNING: go.mod replace directives to module paths is only supported in bazel 7.1.0-rc1 or later,
+          Because of this changes to %s will not be detected by bazel in previous versions.""" % ctx.attr.path)
+
+        command = [fetch_repo, "--path", ctx.attr.path, "--dest", ctx.path("")]
+        result = env_execute(
+            ctx,
+            command,
+            environment = local_path_env,
+            timeout = _GO_REPOSITORY_TIMEOUT,
+        )
+
+        # use "go mod download" to satisfy the dependencies of this module
+        if ctx.attr.debug_mode and result.stderr:
+            print("copy mod: %s", result.stderr)
+
+        if result.return_code:
+            fail(command)
+
+        # use "go mod download" to satisfy the dependencies of this module
+        if result.stderr:
+            print("mod download: %s", result.stderr)
+
+        if result.return_code:
+            fail(command)
+
+        # use "go mod download" to satisfy the dependencies of this module
+
     if fetch_repo_args:
         # Disable sumdb in fetch_repo. In module mode, the sum is a mandatory
         # attribute of go_repository, so we don't need to look it up.
@@ -259,10 +301,12 @@ def _go_repository_impl(ctx):
             environment = fetch_repo_env,
             timeout = _GO_REPOSITORY_TIMEOUT,
         )
+
+        if result.stderr:
+            print("fetch_repo(%s) %s %s" % (ctx.attr.path, result.stderr, fetch_repo_args))
+
         if result.return_code:
-            fail("failed to fetch %s: %s" % (ctx.name, result.stderr))
-        if ctx.attr.debug_mode and result.stderr:
-            print("fetch_repo: " + result.stderr)
+            fail("%s: %s" % (ctx.name, result.stderr))
 
     # Repositories are fetched. Determine if build file generation is needed.
     build_file_names = ctx.attr.build_file_name.split(",")
@@ -314,7 +358,7 @@ def _go_repository_impl(ctx):
             "-repo_config",
             repo_config,
         ]
-        if ctx.attr.version:
+        if ctx.attr.version or ctx.attr.path:
             cmd.append("-go_repository_module_mode")
         if ctx.attr.build_file_name:
             cmd.extend(["-build_file_name", ctx.attr.build_file_name])
@@ -426,6 +470,11 @@ go_repository = repository_rule(
         ),
         "auth_patterns": attr.string_dict(
             doc = _AUTH_PATTERN_DOC,
+        ),
+
+        # Attributes for a module that should be loaded from the local file system.
+        "path": attr.string(
+            doc = """ If specified, `go_repository` will load the module from this local directory""",
         ),
 
         # Attributes for a module that should be downloaded with the Go toolchain.
