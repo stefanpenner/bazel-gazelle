@@ -305,7 +305,7 @@ def fail_on_version_conflict(version, previous, module_tag, module_name_to_go_do
         # version is the same, skip because we won't error
         return
 
-    if not hasattr(module_tag, "module_path"):
+    if not hasattr(module_tag, "file_path"):
         # overrides are not considered for version conflicts
         return
 
@@ -508,28 +508,26 @@ def _go_deps_impl(module_ctx):
             fail_on_version_conflict(version, previous, module_tag, module_name_to_go_dot_mod_label, fail_or_warn)
             paths[module_tag.path] = struct(version = version, module_tag = module_tag)
 
-            print(module_tag.path)
+            # print(module_tag.path)
 
             # if module_tag.path == "example.org/my-non-existent-go-mod":
               # fail(module_tag, replace_map, module_tag.path not in module_resolutions or version > module_resolutions[module_tag.path].version)
             if module_tag.path not in module_resolutions or version > module_resolutions[module_tag.path].version:
                 to_path = None
-                module_path = None;
+                file_path = None;
 
-                # TODO handle moduld_tag._module_path
                 if module_tag.path in replace_map:
                     replacement = replace_map[module_tag.path]
 
                     to_path = replacement.to_path
-                    module_path = replacement.module_path
+                    file_path = replacement.file_path
 
                 module_resolutions[module_tag.path] = struct(
                     repo_name = _repo_name(module_tag.path),
                     version = version,
                     raw_version = raw_version,
                     to_path = to_path,
-                    # TODO why _?
-                    _module_path = module_path
+                    file_path = file_path
                 )
 
     _fail_on_unmatched_overrides(archive_overrides.keys(), module_resolutions, "archive_overrides")
@@ -634,10 +632,10 @@ def _go_deps_impl(module_ctx):
                 "version": "v" + module.raw_version,
             })
 
-        if module._module_path:
+        if module.file_path:
             go_repository_args.update({
                 "version": None,
-                "path": module._module_path,
+                "file_path": module.file_path,
             })
 
         # fail(go_repository_args)
@@ -689,9 +687,10 @@ def _get_sum_from_module(path, module, sums):
         if module.raw_version == "{":
             # replacement have no sums, so we can skip this
             return None
-        else:
+        elif module.file_path == None:
+            print(module)
             # TODO: this error likely needs to convey where to run go mod tidy, as it may be in a subdir
-            fail("No sum for {}@{} from {} found. You may need to run: bazel run @rules_go//go -- mod tidy".format(path, module.raw_version, module.parent_label))
+            fail("No sum for {}@{} from {} found. You may need to run: bazel run @rules_go//go -- mod tidy".format(path, module.raw_version, "parent-label-todo"))#module.parent_label))
 
     return sums[entry]
 
@@ -735,7 +734,7 @@ _module_tag = tag_class(
         ),
         "build_naming_convention": attr.string(doc = """Removed, do not use""", default = ""),
         "build_file_proto_mode": attr.string(doc = """Removed, do not use""", default = ""),
-        "_module_path": attr.string(
+        "file_path": attr.string(
             doc = """blah blah""",
             mandatory = False,
         ),

@@ -179,7 +179,7 @@ def _go_repository_impl(ctx):
             if getattr(ctx.attr, key):
                 fail("cannot specify both version and %s" % key)
         if not ctx.attr.sum:
-            print("path",  ctx.attr.path)
+            print("path",  ctx.attr.file_path)
 
         fetch_path = ctx.attr.replace if ctx.attr.replace else ctx.attr.importpath
         fetch_repo_args = [
@@ -188,7 +188,7 @@ def _go_repository_impl(ctx):
             "-version=" + ctx.attr.version,
             "-sum=" + ctx.attr.sum,
         ]
-    elif ctx.attr.path:
+    elif ctx.attr.file_path:
         pass
     else:
         fail("one of urls, commit, tag, or version must be specified")
@@ -246,8 +246,8 @@ def _go_repository_impl(ctx):
 
     env.update({k: ctx.os.environ[k] for k in env_keys if k in ctx.os.environ})
 
-    if ctx.attr.path:
-        # print("OMG, path: %s", ctx.attr.path)
+    if ctx.attr.file_path:
+        # print("OMG, path: %s", ctx.attr.file_path)
         local_path_env = dict(env)
         local_path_env["GOSUMDB"] = "off"
 
@@ -256,13 +256,13 @@ def _go_repository_impl(ctx):
 
         if hasattr(ctx, "watch_tree"):
             # https://github.com/bazelbuild/bazel/commit/fffa0affebbacf1961a97ef7cd248be64487d480
-            ctx.watch_tree(ctx.attr.path)
+            ctx.watch_tree(ctx.attr.file_path)
         else:
             print("""
   WARNING: go.mod replace directives to module paths is only supported in bazel 7.1.0-rc1 or later,
-          Because of this changes to %s will not be detected by bazel.""" % ctx.attr.path)
+          Because of this changes to %s will not be detected by bazel in previous versions.""" % ctx.attr.file_path)
 
-        command = [fetch_repo, "--path", ctx.attr.path, "--dest", ctx.path("")]
+        command = [fetch_repo, "--path", ctx.attr.file_path, "--dest", ctx.path("")]
         result = env_execute(
             ctx,
             command,
@@ -303,7 +303,7 @@ def _go_repository_impl(ctx):
         )
 
         if result.stderr:
-            print("fetch_repo(%s) %s %s" % (ctx.attr.path, result.stderr, fetch_repo_args))
+            print("fetch_repo(%s) %s %s" % (ctx.attr.file_path, result.stderr, fetch_repo_args))
 
         if result.return_code:
             fail("%s: %s" % (ctx.name, result.stderr))
@@ -358,7 +358,7 @@ def _go_repository_impl(ctx):
             "-repo_config",
             repo_config,
         ]
-        if ctx.attr.version or ctx.attr.path:
+        if ctx.attr.version or ctx.attr.file_path:
             cmd.append("-go_repository_module_mode")
         if ctx.attr.build_file_name:
             cmd.extend(["-build_file_name", ctx.attr.build_file_name])
@@ -473,7 +473,7 @@ go_repository = repository_rule(
         ),
 
         # Attributes for a module that should be loaded from the local file system.
-        "path": attr.string(
+        "file_path": attr.string(
             doc = """ If specified, `go_repository` will load the module from this local directory""",
         ),
 
