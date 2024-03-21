@@ -203,6 +203,8 @@ def parse_go_mod(content, path):
 
     # The go directive can contain patch and pre-release versions, but we omit them.
     major, minor = go.split(".")[:2]
+    if path.dirname.basename.endswith("go_mod"):
+      print("replace", state["replace"])
 
     return struct(
         module = module,

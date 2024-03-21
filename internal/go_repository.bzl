@@ -179,7 +179,7 @@ def _go_repository_impl(ctx):
             if getattr(ctx.attr, key):
                 fail("cannot specify both version and %s" % key)
         if not ctx.attr.sum:
-            fail("if version is specified, sum must also be")
+            print("path",  ctx.attr.path)
 
         fetch_path = ctx.attr.replace if ctx.attr.replace else ctx.attr.importpath
         fetch_repo_args = [
@@ -247,7 +247,7 @@ def _go_repository_impl(ctx):
     env.update({k: ctx.os.environ[k] for k in env_keys if k in ctx.os.environ})
 
     if ctx.attr.path:
-        print("OMG, path: %s", ctx.attr.path)
+        # print("OMG, path: %s", ctx.attr.path)
         local_path_env = dict(env)
         local_path_env["GOSUMDB"] = "off"
 
@@ -260,7 +260,7 @@ def _go_repository_impl(ctx):
         else:
             print("""
   WARNING: go.mod replace directives to module paths is only supported in bazel 7.1.0-rc1 or later,
-          Because of this changes to %s will not be detected by bazel in previous versions.""" % ctx.attr.path)
+          Because of this changes to %s will not be detected by bazel.""" % ctx.attr.path)
 
         command = [fetch_repo, "--path", ctx.attr.path, "--dest", ctx.path("")]
         result = env_execute(

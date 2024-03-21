@@ -454,7 +454,6 @@ def _go_deps_impl(module_ctx):
                         version = version,
                         raw_version = raw_version,
                     )
-
             # Load all sums from transitively resolved `go.sum` files that have modules.
             if len(module_tags_from_go_mod) > 0:
                 for entry, new_sum in sums_from_go_mod(module_ctx, from_file_tag.go_mod).items():
@@ -498,7 +497,7 @@ def _go_deps_impl(module_ctx):
                 if _is_dev_dependency(module_ctx, module_tag):
                     root_module_direct_dev_deps[_repo_name(module_tag.path)] = None
                 else:
-                    root_module_direct_deps[_repo_name(module_tag.path)] = None
+                   root_module_direct_deps[_repo_name(module_tag.path)] = None
 
             version = semver.to_comparable(raw_version)
             previous = paths.get(module_tag.path)
@@ -509,19 +508,28 @@ def _go_deps_impl(module_ctx):
             fail_on_version_conflict(version, previous, module_tag, module_name_to_go_dot_mod_label, fail_or_warn)
             paths[module_tag.path] = struct(version = version, module_tag = module_tag)
 
+            print(module_tag.path)
+
+            # if module_tag.path == "example.org/my-non-existent-go-mod":
+              # fail(module_tag, replace_map, module_tag.path not in module_resolutions or version > module_resolutions[module_tag.path].version)
             if module_tag.path not in module_resolutions or version > module_resolutions[module_tag.path].version:
                 to_path = None
+                module_path = None;
 
                 # TODO handle moduld_tag._module_path
                 if module_tag.path in replace_map:
-                    to_path = replace_map[module_tag.path].to_path
+                    replacement = replace_map[module_tag.path]
+
+                    to_path = replacement.to_path
+                    module_path = replacement.module_path
 
                 module_resolutions[module_tag.path] = struct(
                     repo_name = _repo_name(module_tag.path),
                     version = version,
                     raw_version = raw_version,
                     to_path = to_path,
-                    _module_path = module_tag._module_path,
+                    # TODO why _?
+                    _module_path = module_path
                 )
 
     _fail_on_unmatched_overrides(archive_overrides.keys(), module_resolutions, "archive_overrides")
@@ -588,6 +596,9 @@ def _go_deps_impl(module_ctx):
             )
 
     for path, module in module_resolutions.items():
+        # if path == "example.org/my-non-existent-go-mod":
+          # fail(module)
+          # print("AA", path, module)
         if hasattr(module, "module_name"):
             # Do not create a go_repository for a Go module provided by a bazel_dep.
             root_module_direct_deps.pop(_repo_name(path), default = None)
@@ -629,6 +640,7 @@ def _go_deps_impl(module_ctx):
                 "path": module._module_path,
             })
 
+        # fail(go_repository_args)
         go_repository(**go_repository_args)
 
     # Create a synthetic WORKSPACE file that lists all Go repositories created

@@ -7,6 +7,7 @@ import (
 
 	"github.com/DataDog/sketches-go/ddsketch"
 	"github.com/bazelbuild/bazel-gazelle/tests/bcr/go_mod/pkg/data"
+	"example.org/my-non-existent-go-mod"
 	"github.com/bazelbuild/buildtools/labels"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/bmatcuk/doublestar/v4"
@@ -76,4 +77,10 @@ func TestArchiveOverrideUsed(t *testing.T) {
 
 func TestArchiveOverrideWithPatch(t *testing.T) {
 	require.Equal(t, labels.Patched, "hello")
+}
+
+func TestGodModReplaceToFilePath(t *testing.T) {
+  // This test is used to validate that the go.mod replace directive is being used to replace
+  // the module path with a file path.
+  require.Equal(t, my_non_existent_go_mod.Ping(), "pong")
 }

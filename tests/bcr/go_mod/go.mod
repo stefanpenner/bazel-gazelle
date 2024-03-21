@@ -16,6 +16,8 @@ require (
 	github.com/google/safetext v0.0.0-20220905092116-b49f7bc46da2
 	golang.org/x/sys v0.15.0
 	google.golang.org/protobuf v1.32.0
+  example.org/my-non-existent-go-mod v0.0.0
+
 )
 
 require (
@@ -23,3 +25,5 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 )
+
+replace example.org/my-non-existent-go-mod => ../../fixtures/my-non-existent-go-mod/
