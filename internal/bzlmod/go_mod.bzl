@@ -245,8 +245,7 @@ def _parse_replace_directive(state, tokens, path, line_no):
             file_path = None,
             version = _canonicalize_raw_version(tokens[3]),
         )
-        # pattern: replace from_path from_version => to_path to_version
-
+    # pattern: replace from_path from_version => to_path to_version
     elif len(tokens) == 5 and tokens[2] == "=>":
         state["replace"][from_path] = struct(
             from_version = _canonicalize_raw_version(tokens[1]),
@@ -254,26 +253,32 @@ def _parse_replace_directive(state, tokens, path, line_no):
             version = _canonicalize_raw_version(tokens[4]),
             file_path = None,
         )
-        print(state["replace"][from_path])
+    # pattern: replace from_path from_version => file_path
     elif len(tokens) == 4 and tokens[2] == "=>":
+        file_path = tokens[3]
+        if file_path.startswith("."):
+          file_path = str(path.get_child(file_path))
+
         # TODO: add test
-        # pattern: replace from_path from_version => file_path
         state["replace"][from_path] = struct(
             from_version = _canonicalize_raw_version(tokens[1]),
             to_path = None,
-            file_path = tokens[3],
+            file_path = file_path,
             version = "{",
         )
-        print(state["replace"][from_path])
+    # pattern: replace from_path => to_path
     elif len(tokens) == 3 and tokens[1] == "=>":
-        # pattern: replace from_path => to_path
+        file_path = tokens[2]
+
+        if file_path.startswith("."):
+          file_path = str(path.get_child(file_path))
+
         state["replace"][from_path] = struct(
             from_version = None,
             to_path = None,
-            file_path = tokens[2],
+            file_path = file_path,
             version = "{",
         )
-        print(state["replace"][from_path])
     else:
       fail("{}:{}: unexpected tokens '{}'".format(path, line_no, tokens))
 

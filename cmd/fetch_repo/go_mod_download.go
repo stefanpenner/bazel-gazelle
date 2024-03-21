@@ -65,9 +65,9 @@ func runGoModDownload(dl *GoModDownloadResult, dest string, importpath string, v
 	if dlErr != nil {
 		if _, ok := dlErr.(*exec.ExitError); !ok {
 			if bufErr.Len() > 0 {
-				return fmt.Errorf("%s %s: %s", cmd.Path, strings.Join(cmd.Args, " "), bufErr.Bytes())
+				return fmt.Errorf("!%s %s: %s", cmd.Path, strings.Join(cmd.Args, " "), bufErr.Bytes())
 			} else {
-				return fmt.Errorf("%s %s: %v", cmd.Path, strings.Join(cmd.Args, " "), dlErr)
+				return fmt.Errorf("!!%s %s: %v", cmd.Path, strings.Join(cmd.Args, " "), dlErr)
 			}
 		}
 	}
@@ -75,9 +75,9 @@ func runGoModDownload(dl *GoModDownloadResult, dest string, importpath string, v
 	// Parse the JSON output.
 	if err := json.Unmarshal(buf.Bytes(), &dl); err != nil {
 		if bufErr.Len() > 0 {
-			return fmt.Errorf("%s %s: %s", cmd.Path, strings.Join(cmd.Args, " "), bufErr.Bytes())
+			return fmt.Errorf("3%s %s: %s", cmd.Path, strings.Join(cmd.Args, " "), bufErr.Bytes())
 		} else {
-			return fmt.Errorf("%s %s: %v", cmd.Path, strings.Join(cmd.Args, " "), err)
+      return fmt.Errorf("4%s %s: error parsing JSON: %v error: %v", cmd.Path, strings.Join(cmd.Args, " "), buf, err)
 		}
 	}
 	if dl.Error != "" {

@@ -27,7 +27,6 @@ package main
 import (
 	"flag"
 	"log"
-
 	"golang.org/x/tools/go/vcs"
 )
 
@@ -86,6 +85,7 @@ func main() {
 		if *sum != "" {
 			log.Fatal("-sum must not be set in module path mode")
 		}
+    log.Printf("module from path: %s, to dest: %s", *path, *dest)
 
 		if err := moduleFromPath(*path, *dest); err != nil {
 			log.Fatal(err)
