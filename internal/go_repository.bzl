@@ -133,7 +133,9 @@ def _go_repository_impl(ctx):
     if generate:
         gazelle_path = ctx.path(Label(_gazelle))
 
-    if ctx.attr.urls:
+    if ctx.attr.file_path:
+        pass
+    elif ctx.attr.urls:
         # HTTP mode
         for key in ("commit", "tag", "vcs", "remote", "version", "sum", "replace"):
             if getattr(ctx.attr, key):
@@ -178,7 +180,7 @@ def _go_repository_impl(ctx):
         for key in ("urls", "strip_prefix", "type", "sha256", "commit", "tag", "vcs", "remote"):
             if getattr(ctx.attr, key):
                 fail("cannot specify both version and %s" % key)
-        if not ctx.attr.sum:
+        if ctx.attr.version and not ctx.attr.sum:
             fail("if version is specified, sum must also be")
 
         fetch_path = ctx.attr.replace if ctx.attr.replace else ctx.attr.importpath
@@ -244,6 +246,38 @@ def _go_repository_impl(ctx):
 
     env.update({k: ctx.os.environ[k] for k in env_keys if k in ctx.os.environ})
 
+    if ctx.attr.file_path:
+        local_path_env = dict(env)
+        local_path_env["GOSUMDB"] = "off"
+
+        # Override external GO111MODULE, because it is needed by module mode, no-op in repository mode
+        local_path_env["GO111MODULE"] = "on"
+
+        if hasattr(ctx, "watch_tree"):
+            # https://github.com/bazelbuild/bazel/commit/fffa0affebbacf1961a97ef7cd248be64487d480
+            ctx.watch_tree(ctx.attr.file_path)
+        else:
+            print("""
+  WARNING: go.mod replace directives to module paths is only supported in bazel 7.1.0-rc1 or later,
+          Because of this changes to %s will not be detected by bazel in previous versions.""" % ctx.attr.file_path)
+
+        command = [fetch_repo, "--path", ctx.attr.file_path, "--dest", ctx.path("")]
+        result = env_execute(
+            ctx,
+            command,
+            environment = local_path_env,
+            timeout = _GO_REPOSITORY_TIMEOUT,
+        )
+
+        if result.return_code:
+            fail(command)
+
+        if result.stderr:
+            print("mod download: %s", result.stderr)
+
+        if result.return_code:
+            fail(command)
+
     if fetch_repo_args:
         # Disable sumdb in fetch_repo. In module mode, the sum is a mandatory
         # attribute of go_repository, so we don't need to look it up.
@@ -253,16 +287,18 @@ def _go_repository_impl(ctx):
         # Override external GO111MODULE, because it is needed by module mode, no-op in repository mode
         fetch_repo_env["GO111MODULE"] = "on"
 
+        # if ctx.attr.name.endswith("com_github_google_safetext"):
+        #     fail("fetch_repo(%s) %s %s" % (ctx.attr.file_path, fetch_repo_args, fetch_repo_env))
+
         result = env_execute(
             ctx,
             [fetch_repo] + fetch_repo_args,
             environment = fetch_repo_env,
             timeout = _GO_REPOSITORY_TIMEOUT,
         )
+
         if result.return_code:
-            fail("failed to fetch %s: %s" % (ctx.name, result.stderr))
-        if ctx.attr.debug_mode and result.stderr:
-            print("fetch_repo: " + result.stderr)
+            fail("%s: %s" % (ctx.name, result.stderr))
 
     # Repositories are fetched. Determine if build file generation is needed.
     build_file_names = ctx.attr.build_file_name.split(",")
@@ -314,7 +350,7 @@ def _go_repository_impl(ctx):
             "-repo_config",
             repo_config,
         ]
-        if ctx.attr.version:
+        if ctx.attr.version or ctx.attr.file_path:
             cmd.append("-go_repository_module_mode")
         if ctx.attr.build_file_name:
             cmd.extend(["-build_file_name", ctx.attr.build_file_name])
@@ -331,6 +367,7 @@ def _go_repository_impl(ctx):
         cmd.extend(ctx.attr.build_extra_args)
         cmd.append(ctx.path(""))
         ctx.report_progress("running Gazelle")
+
         result = env_execute(ctx, cmd, environment = env, timeout = _GO_REPOSITORY_TIMEOUT)
         if result.return_code:
             fail("failed to generate BUILD files for %s: %s" % (
@@ -426,6 +463,11 @@ go_repository = repository_rule(
         ),
         "auth_patterns": attr.string_dict(
             doc = _AUTH_PATTERN_DOC,
+        ),
+
+        # Attributes for a module that should be loaded from the local file system.
+        "file_path": attr.string(
+            doc = """ If specified, `go_repository` will load the module from this local directory""",
         ),
 
         # Attributes for a module that should be downloaded with the Go toolchain.
