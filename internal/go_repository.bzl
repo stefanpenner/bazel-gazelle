@@ -545,7 +545,7 @@ go_repository = repository_rule(
             to a less frequently updated file or `None` to disable this functionality.""",
         ),
         "build_directives": attr.string_list(
-            default = [],
+            default = ["proto_mode=disable"],
             doc = """A list of directives to be written to the root level build file before
             Calling Gazelle to generate build files. Each string in the list will be
             prefixed with `#` automatically. A common use case is to pass a list of
